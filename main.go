@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"math/rand"
 	"net"
 	"os"
 	"sync"
@@ -53,13 +54,15 @@ func main() {
 		fmt.Println("Usage: ./game addr:port")
 		os.Exit(1)
 	}
-
+	rand.Seed(time.Now().UnixNano())
 	var o = &User{
 		uri:     os.Args[1],
 		mode:    "client",
 		clients: sync.Map{},
 		iam: object{
 			Hp: 100,
+			X:  rand.Float64() * windowWidth,
+			Y:  rand.Float64() * windowHeight,
 		},
 	}
 
@@ -202,12 +205,15 @@ func listenAndServe(o *User) {
 }
 
 func handleConn(conn net.Conn, o *User) {
-	defer conn.Close()
+	defer func() {
+		fmt.Printf("closed conn with %s\n", conn.RemoteAddr().String())
+		conn.Close()
+	}()
 
 	type msg map[string]object
 
-	var err error
-	ticker := time.Tick(1000 / fps * time.Millisecond)
+	// var err error
+	ticker := time.Tick(100 / fps * time.Millisecond)
 
 	for {
 		select {
@@ -225,19 +231,19 @@ func handleConn(conn net.Conn, o *User) {
 
 			// СЕРВЕР ОТПРАВЛЯЕТ КАЖДОМУ КЛИЕНТУ ДАННЫЕ ОБ !!!ОСТАЛЬНЫХ!!!
 			// КЛИЕНТАХ, ВКЛЮЧАЯ СЕБЯ - СЕРВЕР!
-			err = json.NewEncoder(conn).Encode(payload)
-			if err != nil {
-				continue
-			}
+			json.NewEncoder(conn).Encode(payload)
+			// if err != nil {
+			// 	continue
+			// }
 
 			// СЕРВЕР, В РАМКАХ ОДНОГО СОЕДИНЕНИЯ, ДЕКОДИРУЕТ НОВЫЕ ДАННЫЕ
 			// ОТ КЛИЕНТА И СОХРАНЯЕТ ИХ К СЕБЕ!
 			// !!!ДОЛГО ЕБАЛСЯ!!!! С КОНКУРЕНТНОЙ ЗАПИСЬЮ!!!!
 			m := msg{}
-			err = json.NewDecoder(conn).Decode(&m)
-			if err != nil {
-				continue
-			}
+			json.NewDecoder(conn).Decode(&m)
+			// if err != nil {
+			// 	continue
+			// }
 
 			o.clients.Store(conn.RemoteAddr().String(), m[conn.RemoteAddr().String()])
 		}
@@ -246,27 +252,33 @@ func handleConn(conn net.Conn, o *User) {
 }
 
 func client(conn net.Conn, o *User) {
-	defer conn.Close()
+	defer func() {
+		fmt.Println("client disconnected")
+		conn.Close()
+	}()
 
-	payload := map[string]object{
-		conn.LocalAddr().String(): o.iam,
-	}
-	err := json.NewEncoder(conn).Encode(payload)
-	if err != nil {
-		panic(err)
-	}
+	// payload := map[string]object{
+	// 	conn.LocalAddr().String(): o.iam,
+	// }
+	// err := json.NewEncoder(conn).Encode(payload)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// var err error
 	type msg map[string]object
 
-	ticker := time.Tick(1000 / fps * time.Millisecond)
+	ticker := time.Tick(100 / fps * time.Millisecond)
 
 	for {
 		select {
 		case <-ticker:
 			m := msg{}
-			err = json.NewDecoder(conn).Decode(&m)
-			if err != nil {
-				continue
-			}
+			json.NewDecoder(conn).Decode(&m)
+			fmt.Println(m)
+			// if err != nil {
+			// 	fmt.Println(err)
+			// 	continue
+			// }
 			for k, v := range m {
 				o.clients.Store(k, v)
 			}
@@ -274,10 +286,10 @@ func client(conn net.Conn, o *User) {
 			payload := map[string]object{
 				conn.LocalAddr().String(): o.iam,
 			}
-			err = json.NewEncoder(conn).Encode(payload)
-			if err != nil {
-				continue
-			}
+			json.NewEncoder(conn).Encode(payload)
+			// if err != nil {
+			// 	continue
+			// }
 
 		}
 	}
