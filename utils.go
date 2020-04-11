@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/faiface/pixel"
 	"github.com/google/uuid"
 )
 
@@ -10,4 +11,10 @@ func newUUID() string {
 		panic(err)
 	}
 	return uid.String()
+}
+
+func calcDirectionAngle(goPositionVector, mousePositionVector pixel.Vec) float64 {
+	// выситаем из радиус-вектора положения мыши радиус-вектор положения
+	// игвого объекта. Затем берем угол.
+	return mousePositionVector.Sub(goPositionVector).Angle()
 }
