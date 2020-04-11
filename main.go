@@ -1,92 +1,158 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"image"
-	"math"
 	"math/rand"
 	"net"
 	"os"
-	"sync"
 	"time"
 
 	_ "image/png"
 
-	"github.com/faiface/pixel/imdraw"
-	"golang.org/x/image/colornames"
-
 	"github.com/faiface/pixel"
+	"github.com/faiface/pixel/imdraw"
 	"github.com/faiface/pixel/pixelgl"
+	"golang.org/x/image/colornames"
 )
 
 const (
-	windowWidth  = 500
-	windowHeight = 500
+	windowWidth  = 1920
+	windowHeight = 1080
 
 	fps   = 60
 	speed = 3
 )
 
-type bullet struct {
-	X, Y  float64
+// Spaceship структура игрового объекта корабля
+type Spaceship struct {
+	X     float64
+	Y     float64
 	Angle float64
 }
 
-type object struct {
-	Hp   int
-	X, Y float64
-	// Xm, Ym  float64
-	Angle   float64
-	Bullets []bullet
+// NewSpaceship создает новый объект игрового объекта
+func NewSpaceship() *Spaceship {
+	rand.Seed(time.Now().UnixNano())
+
+	this := &Spaceship{
+		X:     rand.Float64() * windowWidth,
+		Y:     rand.Float64() * windowHeight,
+		Angle: 0,
+	}
+
+	return this
 }
 
-// User .
+// Connection структура, описывающая соединение
+type Connection net.Conn
+
+// NewConnection создает новый объект соединения
+func NewConnection() Connection {
+	this := new(Connection)
+
+	return *this
+}
+
+// Network TODO
+type Network struct {
+}
+
+// NewNetwork TODO
+func NewNetwork(uri string) *Network {
+	this := &Network{}
+
+	return this
+}
+
+// Run TODO
+func (n *Network) Run() {
+	// ..
+}
+
+// User структура описывающая игрока
 type User struct {
-	uri     string
-	mode    string
-	iam     object
-	clients sync.Map
+	Username string
+	Connection
+	*Spaceship
+
+	// players содержит игровые объекты других игроков
+	players []Spaceship
+}
+
+// NewUser создает объект нового пользователя
+func NewUser(username string) *User {
+	this := &User{
+		username,
+		NewConnection(),
+		NewSpaceship(),
+		make([]Spaceship, 0),
+	}
+
+	return this
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: ./game addr:port")
-		os.Exit(1)
-	}
-	rand.Seed(time.Now().UnixNano())
-	var o = &User{
-		uri:     os.Args[1],
-		mode:    "client",
-		clients: sync.Map{},
-		iam: object{
-			Hp: 100,
-			X:  rand.Float64() * windowWidth,
-			Y:  rand.Float64() * windowHeight,
-		},
-	}
-
-	o.startServer()
-
-	pixelgl.Run(o.run)
-}
-
-func (o *User) startServer() {
-	conn, err := net.Dial("tcp", o.uri)
-	if err != nil {
-		fmt.Println("server not fount. I AM A SERVER!")
-		o.mode = "server"
-		go listenAndServe(o)
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: ./game addr:port username")
 		return
 	}
 
-	go client(conn, o)
+	uri, username := os.Args[1], os.Args[2]
+
+	user := NewUser(username)
+	network := NewNetwork(uri)
+
+	go network.Run()
+
+	startGame(user)
 }
 
-func (o *User) run() {
+func startGame(u *User) {
+	pixelgl.Run(
+		u.run,
+	)
+}
+
+func isServerMode(uri string) bool {
+	// if isServerMode(uri) {
+	// 	// go listenAndServe(user)
+	// 	go user.Server()
+	// } else {
+	// 	go user.Client()
+	// }
+	return true
+}
+
+// Server запускает игру в роли сервера
+func (u *User) Server() {
+	// listener, err := net.Listen("tcp", u)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// defer listener.Close()
+
+	// for {
+	// 	conn, err := listener.Accept()
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+
+	// 	u.players.Store(conn.RemoteAddr().String(), object{})
+
+	// 	go handleConn(conn, o)
+	// }
+}
+
+// Client запускает игру в роли клиента
+func (u *User) Client() {
+
+}
+
+func (u *User) run() {
 	cfg := pixelgl.WindowConfig{
-		Title:  o.mode,
 		Bounds: pixel.R(0, 0, windowWidth, windowHeight),
+		VSync:  true,
 	}
 
 	win, err := pixelgl.NewWindow(cfg)
@@ -99,11 +165,17 @@ func (o *User) run() {
 	frames := 0
 
 	imd := imdraw.New(nil)
-	pic, err := loadPicture("spaceship.png")
+	pic, err := loadPicture("assets/spaceship.png")
 	if err != nil {
 		panic(err)
 	}
 	sprite := pixel.NewSprite(pic, pic.Bounds())
+
+	bg, err := loadPicture("assets/space1.png")
+	if err != nil {
+		panic(err)
+	}
+	spriteBG := pixel.NewSprite(bg, bg.Bounds())
 
 	imd.Color = pixel.RGB(1, 0, 0)
 	fpsTimer := time.Tick(1000 / fps * time.Millisecond)
@@ -111,70 +183,14 @@ func (o *User) run() {
 		select {
 		case <-second:
 			win.SetTitle(fmt.Sprintf("%s | FPS: %d", cfg.Title, frames))
-			fmt.Println(len(o.iam.Bullets))
 			frames = 0
 
 		case <-fpsTimer:
 			win.Clear(colornames.White)
+			// win.MakePicture()
 			imd.Clear()
-			if o.iam.Hp <= 0 {
-				os.Exit(0)
-			}
-
-			if win.Pressed(pixelgl.KeyW) {
-				o.iam.Y += speed
-			}
-			if win.Pressed(pixelgl.KeyS) {
-				o.iam.Y -= speed
-			}
-			if win.Pressed(pixelgl.KeyA) {
-				o.iam.X -= speed
-			}
-			if win.Pressed(pixelgl.KeyD) {
-				o.iam.X += speed
-			}
-			pos := win.MousePosition()
-			if pos.X > o.iam.X {
-				o.iam.Angle = math.Atan((pos.Y - o.iam.Y) / (pos.X - o.iam.X))
-			} else {
-				o.iam.Angle = math.Atan((pos.Y-o.iam.Y)/(pos.X-o.iam.X)) - math.Pi
-			}
-			if win.JustPressed(pixelgl.MouseButton1) {
-				o.iam.Bullets = append(o.iam.Bullets, bullet{o.iam.X, o.iam.Y, o.iam.Angle})
-			}
-			sprite.Draw(win, pixel.IM.Rotated(pixel.V(0, 0), o.iam.Angle).Moved(pixel.V(o.iam.X, o.iam.Y)))
-
-			newBullets := o.iam.Bullets[:0]
-			for i, b := range o.iam.Bullets {
-				if b.X < windowWidth && b.X > 0 && b.Y < windowHeight && b.Y > 0 {
-					newBullets = append(newBullets, b)
-				}
-				o.clients.Range(func(k, v interface{}) bool {
-					if isAim(b, v.(object)) {
-						fmt.Println("hited")
-						// o.iam.Hp--
-						newClient := v.(object)
-						newClient.Hp--
-						o.clients.Store(k, newClient)
-					}
-					return true // if false, Range stops
-				})
-				imd.Push(pixel.V(b.X, b.Y))
-				imd.Circle(2, 0)
-
-				o.iam.Bullets[i].X += math.Cos(b.Angle)
-				o.iam.Bullets[i].Y += math.Sin(b.Angle)
-			}
-			o.iam.Bullets = newBullets
-
-			o.clients.Range(func(k, v interface{}) bool {
-				sprite.Draw(win, pixel.IM.Rotated(pixel.V(0, 0), v.(object).Angle).Moved(pixel.V(v.(object).X, v.(object).Y)))
-				for _, b := range v.(object).Bullets {
-					imd.Push(pixel.V(b.X, b.Y))
-					imd.Circle(2, 0)
-				}
-				return true // if false, Range stops
-			})
+			spriteBG.Draw(win, pixel.IM.Moved(pixel.V(windowWidth/2, windowHeight/2)))
+			sprite.Draw(win, pixel.IM.Scaled(pixel.V(0, 0), 5).Moved(pixel.V(windowWidth/2, windowHeight/2)))
 
 			imd.Draw(win)
 
@@ -183,125 +199,6 @@ func (o *User) run() {
 			frames++
 		}
 	}
-}
-
-func listenAndServe(o *User) {
-	listener, err := net.Listen("tcp", o.uri)
-	if err != nil {
-		panic(err)
-	}
-	defer listener.Close()
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			panic(err)
-		}
-
-		o.clients.Store(conn.RemoteAddr().String(), object{})
-
-		go handleConn(conn, o)
-	}
-}
-
-func handleConn(conn net.Conn, o *User) {
-	defer func() {
-		fmt.Printf("closed conn with %s\n", conn.RemoteAddr().String())
-		conn.Close()
-	}()
-
-	type msg map[string]object
-
-	// var err error
-	ticker := time.Tick(100 / fps * time.Millisecond)
-
-	for {
-		select {
-		case <-ticker:
-			var payload = map[string]object{
-				o.uri: o.iam,
-			}
-
-			o.clients.Range(func(k, v interface{}) bool {
-				if conn.RemoteAddr().String() != k {
-					payload[k.(string)] = v.(object)
-				}
-				return true
-			})
-
-			// СЕРВЕР ОТПРАВЛЯЕТ КАЖДОМУ КЛИЕНТУ ДАННЫЕ ОБ !!!ОСТАЛЬНЫХ!!!
-			// КЛИЕНТАХ, ВКЛЮЧАЯ СЕБЯ - СЕРВЕР!
-			json.NewEncoder(conn).Encode(payload)
-			// if err != nil {
-			// 	continue
-			// }
-
-			// СЕРВЕР, В РАМКАХ ОДНОГО СОЕДИНЕНИЯ, ДЕКОДИРУЕТ НОВЫЕ ДАННЫЕ
-			// ОТ КЛИЕНТА И СОХРАНЯЕТ ИХ К СЕБЕ!
-			// !!!ДОЛГО ЕБАЛСЯ!!!! С КОНКУРЕНТНОЙ ЗАПИСЬЮ!!!!
-			m := msg{}
-			json.NewDecoder(conn).Decode(&m)
-			// if err != nil {
-			// 	continue
-			// }
-
-			o.clients.Store(conn.RemoteAddr().String(), m[conn.RemoteAddr().String()])
-		}
-	}
-
-}
-
-func client(conn net.Conn, o *User) {
-	defer func() {
-		fmt.Println("client disconnected")
-		conn.Close()
-	}()
-
-	// payload := map[string]object{
-	// 	conn.LocalAddr().String(): o.iam,
-	// }
-	// err := json.NewEncoder(conn).Encode(payload)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// var err error
-	type msg map[string]object
-
-	ticker := time.Tick(100 / fps * time.Millisecond)
-
-	for {
-		select {
-		case <-ticker:
-			m := msg{}
-			json.NewDecoder(conn).Decode(&m)
-			fmt.Println(m)
-			// if err != nil {
-			// 	fmt.Println(err)
-			// 	continue
-			// }
-			for k, v := range m {
-				o.clients.Store(k, v)
-			}
-
-			payload := map[string]object{
-				conn.LocalAddr().String(): o.iam,
-			}
-			json.NewEncoder(conn).Encode(payload)
-			// if err != nil {
-			// 	continue
-			// }
-
-		}
-	}
-}
-
-func isAim(b bullet, enemy object) bool {
-	if b.X >= (enemy.X-10) && b.X <= (enemy.X+10) {
-		if b.X >= (enemy.Y-10) && b.Y <= (enemy.Y+10) {
-			return true
-		}
-	}
-	return false
 }
 
 func loadPicture(path string) (pixel.Picture, error) {
