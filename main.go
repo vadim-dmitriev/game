@@ -11,6 +11,7 @@ import (
 
 	"github.com/faiface/pixel"
 	"github.com/faiface/pixel/pixelgl"
+	opensimplex "github.com/ojrac/opensimplex-go"
 	"golang.org/x/image/colornames"
 
 	"github.com/vadim-dmitriev/game/network"
@@ -28,6 +29,9 @@ const (
 
 	speedLimit = 5
 	friction   = 0.96
+
+	scale  = float32(.049)
+	scale2 = float32(.079)
 )
 
 var (
@@ -117,8 +121,9 @@ func startGame(u *User) {
 
 func (u *User) run() {
 	cfg := pixelgl.WindowConfig{
-		Bounds: pixel.R(0, 0, windowWidth, windowHeight),
-		VSync:  true,
+		Bounds:      pixel.R(0, 0, windowWidth, windowHeight),
+		VSync:       true,
+		Undecorated: true,
 	}
 
 	win, err := pixelgl.NewWindow(cfg)
@@ -133,12 +138,23 @@ func (u *User) run() {
 	frames := 0
 
 	fpsTimer := time.Tick(1000 / fps * time.Millisecond)
-	bg, err := loadPicture("assets/space2.png")
+	bg, err := loadPicture("assets/space1.png")
 	if err != nil {
 		panic(err)
 	}
 	spriteBG := pixel.NewSprite(bg, bg.Bounds())
-	bgIM := pixel.IM.ScaledXY(pixel.V(0, 0), pixel.V(windowWidth/spriteBG.Frame().W(), windowHeight/spriteBG.Frame().H()))
+	bgIM := pixel.IM.ScaledXY(pixel.V(0, 0), pixel.V(windowWidth/spriteBG.Frame().W(), windowHeight/spriteBG.Frame().H())).Moved(pixel.V(windowWidth/2, windowHeight/2))
+
+	p := opensimplex.NewNormalized32(time.Now().Unix())
+	pRect := pixel.R(0, 0, windowWidth/10, windowHeight/10)
+
+	perlinCanvas := pixelgl.NewCanvas(pRect)
+	perlinCanvasPixels := perlinCanvas.Pixels()
+
+	perlinCanvas2 := pixelgl.NewCanvas(pRect)
+	perlinCanvasPixels2 := perlinCanvas2.Pixels()
+
+	var time float32
 
 	for !win.Closed() && !win.JustPressed(pixelgl.KeyEscape) {
 		select {
@@ -147,11 +163,20 @@ func (u *User) run() {
 			frames = 0
 
 		case <-fpsTimer:
+			time++
 			win.Clear(colornames.White)
 
 			u.handleInput(win)
 
-			spriteBG.Draw(win, bgIM.Moved(pixel.V(windowWidth/2, windowHeight/2)))
+			spriteBG.Draw(win, bgIM)
+
+			updateBG(p, pRect, &perlinCanvasPixels, &perlinCanvasPixels2, time)
+			perlinCanvas.SetPixels(perlinCanvasPixels)
+			perlinCanvas.Draw(win, bgIM.Scaled(pixel.V(windowWidth/2, windowHeight/2), 10))
+
+			perlinCanvas2.SetPixels(perlinCanvasPixels2)
+			perlinCanvas2.Draw(win, bgIM.Scaled(pixel.V(windowWidth/2, windowHeight/2), 10))
+
 			u.Draw(win)
 			u.DrawOthers(win)
 
@@ -160,6 +185,32 @@ func (u *User) run() {
 			frames++
 		}
 	}
+}
+
+func updateBG(p opensimplex.Noise32, pRect pixel.Rect, pixels, pixels2 *[]uint8, time float32) {
+	newPixels := make([]uint8, len(*pixels))
+	newPixels2 := make([]uint8, len(*pixels))
+
+	pixelsLen := int(4 * windowWidth / 10 * windowHeight / 10)
+	for i := 0; i < pixelsLen; i += 4 {
+		os := uint8(p.Eval3(float32(int(i/4)/(windowHeight/10))*scale, float32((i/4)%(windowWidth/10))*scale, time*0.0025)*150) + 1
+
+		newPixels[i+0] = 175 / os
+		newPixels[i+1] = 85 / os
+		newPixels[i+2] = 157 / os
+		newPixels[i+3] = os
+
+		os = uint8(p.Eval3(float32(int(i/4)/(windowHeight/10))*scale2, float32((i/4)%(windowWidth/10))*scale2, time*0.003)*100) + 1
+
+		newPixels2[i+0] = 125 / os
+		newPixels2[i+1] = 249 / os
+		newPixels2[i+2] = 255 / os
+		newPixels2[i+3] = os
+
+	}
+	copy(*pixels, newPixels)
+	copy(*pixels2, newPixels2)
+
 }
 
 // Draw отрисовывает спрайт моего игрока
