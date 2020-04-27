@@ -12,9 +12,6 @@ import (
 	"github.com/faiface/pixel"
 	"github.com/faiface/pixel/pixelgl"
 	opensimplex "github.com/ojrac/opensimplex-go"
-	"golang.org/x/image/colornames"
-
-	"github.com/vadim-dmitriev/game/network"
 )
 
 const (
@@ -75,8 +72,8 @@ func NewSpaceship() *Spaceship {
 	return this
 }
 
-// User структура описывающая игрока
-type User struct {
+// user структура описывающая игрока
+type user struct {
 	Username string
 	GO       *Spaceship
 
@@ -85,8 +82,8 @@ type User struct {
 }
 
 // NewUser создает объект нового пользователя
-func NewUser(username string) *User {
-	this := &User{
+func newUser(username string) *user {
+	this := &user{
 		username,
 		NewSpaceship(),
 		make([]*Spaceship, 0),
@@ -96,95 +93,48 @@ func NewUser(username string) *User {
 }
 
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: ./game addr:port username")
-		return
+	if !isEnoughArguments() {
+		exitWithFail("Использование: ./spaceshipWars адрес:порт имя_пользователя")
 	}
 
-	uri, username := os.Args[1], os.Args[2]
+	g, err := newGame()
+	if err != nil {
+		exitWithFail("Не удалось запустить игру", err)
+	}
 
-	user := NewUser(username)
-	network := network.New(uri)
-
-	network.Run()
-
-	startGame(user)
+	g.start()
 }
 
-func startGame(u *User) {
-	u.setSprite()
-
-	pixelgl.Run(
-		u.run,
-	)
-}
-
-func (u *User) run() {
-	cfg := pixelgl.WindowConfig{
+func createWindow() (*pixelgl.Window, error) {
+	// TODO: Вынести настройки окна в конфиг-файл.
+	windowConfig := pixelgl.WindowConfig{
 		Bounds:      pixel.R(0, 0, windowWidth, windowHeight),
 		VSync:       true,
 		Undecorated: true,
 	}
+	win, err := pixelgl.NewWindow(windowConfig)
 
-	win, err := pixelgl.NewWindow(cfg)
-	if err != nil {
-		panic(err)
+	return win, err
+}
+
+func isEnoughArguments() bool {
+	return len(os.Args) > 2
+}
+
+// exitWithFail записывает сообщение failMessage в стандартный поток ошибок
+// и завершает выполнение программы с статусом завершения 1.
+// Оператор return не позволяет завершить программу с кодом завершения
+// отличным от нуля, поэтому здесь используется os.Exit(code int).
+// Tip: exitWithFail завершает программу в тот же момент, игнорируя
+// операторы defer.
+func exitWithFail(failMessage string, errs ...error) {
+	if len(errs) == 0 {
+		fmt.Fprintf(os.Stderr, "%s\n", failMessage)
+		os.Exit(1)
 	}
-	defer win.Destroy()
 
-	win.SetTitle(fmt.Sprintf("%s | FPS: %d", cfg.Title, 0))
-
-	second := time.Tick(time.Second)
-	frames := 0
-
-	fpsTimer := time.Tick(1000 / fps * time.Millisecond)
-	bg, err := loadPicture("assets/space1.png")
-	if err != nil {
-		panic(err)
-	}
-	spriteBG := pixel.NewSprite(bg, bg.Bounds())
-	bgIM := pixel.IM.ScaledXY(pixel.V(0, 0), pixel.V(windowWidth/spriteBG.Frame().W(), windowHeight/spriteBG.Frame().H())).Moved(pixel.V(windowWidth/2, windowHeight/2))
-
-	p := opensimplex.NewNormalized32(time.Now().Unix())
-	pRect := pixel.R(0, 0, windowWidth/10, windowHeight/10)
-
-	perlinCanvas := pixelgl.NewCanvas(pRect)
-	perlinCanvasPixels := perlinCanvas.Pixels()
-
-	perlinCanvas2 := pixelgl.NewCanvas(pRect)
-	perlinCanvasPixels2 := perlinCanvas2.Pixels()
-
-	var time float32
-
-	for !win.Closed() && !win.JustPressed(pixelgl.KeyEscape) {
-		select {
-		case <-second:
-			win.SetTitle(fmt.Sprintf("%s | FPS: %d", cfg.Title, frames))
-			frames = 0
-
-		case <-fpsTimer:
-			time++
-			win.Clear(colornames.White)
-
-			u.handleInput(win)
-
-			spriteBG.Draw(win, bgIM)
-
-			updateBG(p, pRect, &perlinCanvasPixels, &perlinCanvasPixels2, time)
-			perlinCanvas.SetPixels(perlinCanvasPixels)
-			perlinCanvas.Draw(win, bgIM.Scaled(pixel.V(windowWidth/2, windowHeight/2), 10))
-
-			perlinCanvas2.SetPixels(perlinCanvasPixels2)
-			perlinCanvas2.Draw(win, bgIM.Scaled(pixel.V(windowWidth/2, windowHeight/2), 10))
-
-			u.Draw(win)
-			u.DrawOthers(win)
-
-			win.Update()
-
-			frames++
-		}
-	}
+	fmt.Fprintf(os.Stderr, "%s: %s\n", failMessage, errs[0].Error())
+	os.Exit(1)
 }
 
 func updateBG(p opensimplex.Noise32, pRect pixel.Rect, pixels, pixels2 *[]uint8, time float32) {
@@ -214,7 +164,7 @@ func updateBG(p opensimplex.Noise32, pRect pixel.Rect, pixels, pixels2 *[]uint8,
 }
 
 // Draw отрисовывает спрайт моего игрока
-func (u *User) Draw(win *pixelgl.Window) {
+func (u *user) draw(win *pixelgl.Window) {
 	u.GO.sprite.Draw(
 		win,
 		pixel.IM.Rotated(pixel.V(0, 0), u.GO.Angle).Moved(u.GO.Pos),
@@ -222,7 +172,7 @@ func (u *User) Draw(win *pixelgl.Window) {
 }
 
 // DrawOthers отрисовывает спрайты других игроков
-func (u *User) DrawOthers(win *pixelgl.Window) {
+func (u *user) DrawOthers(win *pixelgl.Window) {
 	for _, other := range u.others {
 		other.sprite.Draw(
 			win,
@@ -232,7 +182,7 @@ func (u *User) DrawOthers(win *pixelgl.Window) {
 
 }
 
-func (u *User) handleInput(win *pixelgl.Window) {
+func (u *user) handleInput(win *pixelgl.Window) {
 	// вычисляем и устанавливаем направление взора
 	mousePosition := win.MousePosition()
 	u.GO.Angle = calcDirectionAngle(u.GO.Pos, mousePosition)
@@ -274,7 +224,7 @@ func (u *User) handleInput(win *pixelgl.Window) {
 
 }
 
-func (u *User) setSprite() {
+func (u *user) setSprite() {
 	pic, err := loadPicture("assets/spaceship.png")
 	if err != nil {
 		panic(err)
@@ -288,6 +238,7 @@ func loadPicture(path string) (pixel.Picture, error) {
 		return nil, err
 	}
 	defer file.Close()
+
 	img, _, err := image.Decode(file)
 	if err != nil {
 		return nil, err

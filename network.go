@@ -21,7 +21,7 @@ const (
 // Network TODO
 type Network struct {
 	URI   string
-	Users []User
+	Users []user
 	mu    *sync.RWMutex
 }
 
@@ -29,7 +29,7 @@ type Network struct {
 func NewNetwork(uri string) *Network {
 	this := &Network{
 		URI:   uri,
-		Users: make([]User, 0, 3),
+		Users: make([]user, 0, 3),
 		mu:    &sync.RWMutex{},
 	}
 

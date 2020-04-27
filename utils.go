@@ -14,7 +14,7 @@ func newUUID() string {
 }
 
 func calcDirectionAngle(goPositionVector, mousePositionVector pixel.Vec) float64 {
-	// выситаем из радиус-вектора положения мыши радиус-вектор положения
-	// игвого объекта. Затем берем угол.
+	// вычитаем из радиус-вектора положения мыши радиус-вектор положения
+	// игрового объекта. Затем берем угол.
 	return mousePositionVector.Sub(goPositionVector).Angle()
 }

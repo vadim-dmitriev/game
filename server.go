@@ -20,20 +20,20 @@ func (n *Network) runAsServer() {
 			panic(err)
 		}
 
-		newUser := User{}
+		newUser := user{}
 		n.Users = append(n.Users, newUser)
 
 		go n.handleConn(conn, &newUser)
 	}
 }
 
-func (n *Network) handleConn(conn net.Conn, user *User) {
+func (n *Network) handleConn(conn net.Conn, u *user) {
 	defer conn.Close()
 
 	username := readUsername(conn)
-	user.Username = username
+	u.Username = username
 
-	type msg []User
+	type msg []user
 	for {
 		n.mu.RLock()
 		for _, user := range n.Users {
